@@ -120,6 +120,11 @@ public class XhsSaveFix implements IXposedHookLoadPackage {
                     Object request = XposedHelpers.callMethod(chain, "request");
                     Object response = XposedHelpers.callMethod(chain, "proceed", request);
                     try {
+                        response = patchSavePermissionResponse(cl, request, response);
+                    } catch (Throwable t) {
+                        XposedBridge.log("[xhs-savefix] patch response err: " + t);
+                    }
+                    try {
                         maybeCapture(request, response);
                     } catch (Throwable t) {
                         XposedBridge.log("[xhs-harvest] capture err: " + t);
@@ -149,6 +154,58 @@ public class XhsSaveFix implements IXposedHookLoadPackage {
         } catch (Throwable t) {
             XposedBridge.log("[xhs-harvest] hook build() failed: " + t);
         }
+    }
+
+    private Object patchSavePermissionResponse(ClassLoader cl, Object request, Object response)
+        throws Throwable {
+        if (request == null || response == null) return response;
+        String url = String.valueOf(XposedHelpers.callMethod(request, "url"));
+        if (url == null || !url.contains("/note/")) return response;
+
+        Object peek = XposedHelpers.callMethod(response, "peekBody", MAX_BODY);
+        String body = (String) XposedHelpers.callMethod(peek, "string");
+        if (body == null || body.isEmpty()) return response;
+        if (!body.contains("\"image_download\"") || !body.contains("\"enable\"")) return response;
+
+        String patched = forceEnableImageDownload(body);
+        if (patched.equals(body)) return response;
+
+        Object oldBody = XposedHelpers.callMethod(response, "body");
+        Object mediaType = oldBody == null ? null : XposedHelpers.callMethod(oldBody, "contentType");
+        Object newBody = createResponseBody(cl, mediaType, patched);
+        if (newBody == null) return response;
+
+        Object builder = XposedHelpers.callMethod(response, "newBuilder");
+        XposedHelpers.callMethod(builder, "body", newBody);
+        XposedBridge.log("[xhs-savefix] patched image_download.enable=false -> true");
+        return XposedHelpers.callMethod(builder, "build");
+    }
+
+    private Object createResponseBody(ClassLoader cl, Object mediaType, String text) {
+        try {
+            Class<?> c = XposedHelpers.findClass("okhttp3.ResponseBody", cl);
+            return XposedHelpers.callStaticMethod(c, "create", mediaType, text);
+        } catch (Throwable ignored) {}
+        try {
+            Class<?> c = XposedHelpers.findClass("okhttp3.ResponseBody", cl);
+            return XposedHelpers.callStaticMethod(c, "create", text, mediaType);
+        } catch (Throwable ignored) {}
+        try {
+            Class<?> c = XposedHelpers.findClass("okhttp3.ResponseBody", cl);
+            Object companion = XposedHelpers.getStaticObjectField(c, "Companion");
+            return XposedHelpers.callMethod(companion, "create", text, mediaType);
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    private String forceEnableImageDownload(String body) {
+        String patched = body.replaceAll(
+            "(\"type\"\\s*:\\s*\"image_download\"[^\\{\\}]*?\"enable\"\\s*:\\s*)false",
+            "$1true");
+        patched = patched.replaceAll(
+            "(\"enable\"\\s*:\\s*)false([^\\{\\}]*?\"type\"\\s*:\\s*\"image_download\")",
+            "$1true$2");
+        return patched;
     }
 
     private void maybeCapture(Object request, Object response) throws Throwable {

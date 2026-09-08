@@ -9,6 +9,7 @@
 小红书在笔记数据里下发 `MediaSaveConfig`，其 JSON 字段 **`disable_save: true`** 表示作者关闭了保存。客户端在下载/保存路径（`DownloadController.onDownloadClick`）里检查 getter `MediaSaveConfig.b()`（即 `disableSaveMedia`），为 `true` 就弹 toast 并 `return` 拦截。
 
 本模块把 `b()`（以及水印开关 `c()`）**强制返回 `false`**，判断永不命中，保存照常执行。
+另外增加了新规则兜底：当返回包出现 `{"type":"image_download","enable":false}`（或字段顺序颠倒）时，模块会在进程内把它改成 `enable:true` 后再交给客户端逻辑。
 
 完整逆向过程见 **[逆向分析与思路.md](逆向分析与思路.md)**。
 

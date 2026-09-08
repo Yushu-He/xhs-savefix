@@ -8,7 +8,6 @@ import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.nio.charset.StandardCharsets;
-import java.util.Iterator;
 import java.util.List;
 
 import de.robv.android.xposed.IXposedHookLoadPackage;
@@ -16,8 +15,6 @@ import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
-import org.json.JSONArray;
-import org.json.JSONObject;
 
 /**
  * 小红书增强模块(com.xingin.xhs),两件事:
@@ -202,46 +199,13 @@ public class XhsSaveFix implements IXposedHookLoadPackage {
     }
 
     private String forceEnableImageDownload(String body) {
-        String t = body.trim();
-        if (t.isEmpty()) return body;
-        try {
-            if (t.charAt(0) == '{') {
-                JSONObject o = new JSONObject(body);
-                return forceEnableImageDownload(o) > 0 ? o.toString() : body;
-            }
-            if (t.charAt(0) == '[') {
-                JSONArray a = new JSONArray(body);
-                return forceEnableImageDownload(a) > 0 ? a.toString() : body;
-            }
-        } catch (Throwable ignored) {
-            // 非 JSON 或解析失败,保持原响应不变
-        }
-        return body;
-    }
-
-    private int forceEnableImageDownload(JSONObject obj) throws Exception {
-        int changed = 0;
-        if ("image_download".equals(obj.optString("type")) && !obj.optBoolean("enable", true)) {
-            obj.put("enable", true);
-            changed++;
-        }
-        Iterator<String> it = obj.keys();
-        while (it.hasNext()) {
-            Object v = obj.opt(it.next());
-            if (v instanceof JSONObject) changed += forceEnableImageDownload((JSONObject) v);
-            else if (v instanceof JSONArray) changed += forceEnableImageDownload((JSONArray) v);
-        }
-        return changed;
-    }
-
-    private int forceEnableImageDownload(JSONArray arr) throws Exception {
-        int changed = 0;
-        for (int i = 0; i < arr.length(); i++) {
-            Object v = arr.opt(i);
-            if (v instanceof JSONObject) changed += forceEnableImageDownload((JSONObject) v);
-            else if (v instanceof JSONArray) changed += forceEnableImageDownload((JSONArray) v);
-        }
-        return changed;
+        String patched = body.replaceAll(
+            "(\"type\"\\s*:\\s*\"image_download\"[^\\{\\}]*?\"enable\"\\s*:\\s*)false",
+            "$1true");
+        patched = patched.replaceAll(
+            "(\"enable\"\\s*:\\s*)false([^\\{\\}]*?\"type\"\\s*:\\s*\"image_download\")",
+            "$1true$2");
+        return patched;
     }
 
     private void maybeCapture(Object request, Object response) throws Throwable {
